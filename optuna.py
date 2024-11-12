@@ -74,6 +74,38 @@ def catboost_objective(trial):
     print(f'Trial {trial.number}: {auc_scores} , mean : {np.mean(auc_scores)}')
     return np.mean(auc_scores)
 
+def xgb_objective(trial):
+    param = {
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1200),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'min_child_weight': trial.suggest_int('min_child_samples', 1, 10),
+        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+        'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
+        'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+        'gamma': trial.suggest_float('gamma', 0, 5),
+    }
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    auc_scores = []
+    for train_idx, val_idx in cv.split(X_train, y_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+        
+        # creating LightGBM classifier with suggested hyperparameters
+        model = XGBClassifier(**params,
+                                   random_seed=42,
+                                   eval_metric = 'AUC'
+                                  )
+        model.fit(X_train_fold, y_train_fold, eval_set=(X_val_fold, y_val_fold), early_stopping_rounds=150, verbose=False)
+        y_pred_proba = model.predict_proba(X_val_fold)[:, 1]
+        auc = roc_auc_score(y_val_fold, y_pred_proba)
+        auc_scores.append(auc)
+    
+    print(f'Trial {trial.number}: {auc_scores} , mean : {np.mean(auc_scores)}')
+    return np.mean(auc_scores)
+
 lgbm_study = optuna.create_study(direction='maximize', sampler=TPESampler(n_startup_trials=30, seed=42, multivariate=True))
 lgbm_study.optimize(lgbm_objective, n_trials=100)
 
